@@ -1,0 +1,76 @@
+# zero-rans NTF1 v1 spec | 0-dep 8-way rANS + LZ-split + multi-codec video + adaptive CDF airlock
+NTF1 zero_rans
+
+# Core entropy + LZ + socket + residual + video + adaptive_stream + cpu_spec + nc_nibble pipelines
+rans8 |> normalize_counts |> build_decode_lut |> encode_interleaved_lanes |> decode_lanes_core
+lz_split |> parse_lz_split |> encode_8way_with_scale |> decode_with_limit_into |> copy_lz_match
+cpu_spec |> parse_cpu_specs |> detect_host_profile |> tuning_plan
+nc_nibble |> encode_adaptive_nc_nibble |> decode_adaptive_nc_nibble |> encode_nibble_seq |> decode_nibble_seq |> encode_nibble_o1_match |> decode_nibble_o1_match |> compress_parallel_blocks |> decompress_parallel_blocks
+socket_kernels |> paeth_pred8 |> grad_socket8 |> sub_mod256_8 |> add_mod256_8 |> zigzag_u8_8 |> nc_hash_o2_8 |> nc_hash4_8 |> nc_mix3_prob12_8
+socket_rans |> pack_radix_span |> encode_socket_8way |> decode_socket_8way_with_limit |> unpack_radix_span
+socket_lz2d |> parse_arrival_dp |> encode_substream_socket_auto |> decode_substream_socket_auto |> copy_lz_match
+residual |> forward_dct_4x4 |> forward_dst7_4x4 |> quantize_block |> encode_residual_blocks |> decode_residual_blocks
+video |> analyze_frame_structure |> encode_luma_macroblock |> encode_video_frame |> decode_video_frame
+adaptive_stream |> ema_freq_step |> rd_dual_step |> adaptive_encode |> adaptive_decode
+
+# Forward morphisms (+t)
++t raw_bytes |> encode_8way -> brn1_frame
++t brn1_frame |> decode_with_limit_into -> raw_bytes
++t raw_bytes |> compress_lz_split -> brl1_frame
++t brl1_frame |> decompress_lz_split_with_limit -> raw_bytes
++t raw_bytes |> encode_socket_8way -> brs1_frame
++t brs1_frame |> decode_socket_8way_with_limit -> raw_bytes
++t raw_bytes |> compress_socket_lz2d -> brl2_frame
++t brl2_frame |> decompress_socket_lz2d_with_limit -> raw_bytes
++t raw_bytes |> encode_adaptive_nc_nibble -> nc_nibble_stream
++t nc_nibble_stream |> decode_adaptive_nc_nibble -> raw_bytes
++t raw_bytes |> compress_parallel_blocks -> brp2_frame
++t brp2_frame |> decompress_parallel_blocks -> raw_bytes
++t residual_blocks |> encode_residuals_4x4 -> brv4_frame
++t brv4_frame |> decode_residuals_4x4_with_limit -> residual_blocks
++t residual_blocks |> encode_residuals_8x8 -> brv8_frame
++t brv8_frame |> decode_residuals_8x8_with_limit -> residual_blocks
++t yuv420_frame |> encode_video_frame -> bvf1_frame
++t bvf1_frame |> decode_video_frame -> yuv420_frame
++t frame_sequence |> adaptive_encode -> bvf1_sequence
++t bvf1_sequence |> adaptive_decode -> frame_sequence
++t brn1_frame -> Fault.CorruptState
++t brn1_frame -> Fault.TruncatedStream
++t brn1_frame -> Fault.ChecksumMismatch
++t brn1_frame -> Fault.OutputTooLarge
++t brn1_frame -> Fault.CorruptProbabilityTable
++t brl1_frame -> Fault.CorruptLzStream
++t brs1_frame -> Fault.CorruptSocketStream
++t brl2_frame -> Fault.CorruptLz2dStream
++t brp2_frame -> Fault.CorruptParallelBlock
++t brv4_frame -> Fault.CorruptResidualBlock
++t bvf1_frame -> Fault.InvalidDimensions
++t bvf1_frame -> Fault.ReferenceMismatch
++t bvf1_frame -> Fault.CorruptVideoFrame
+
+# Retro-causal traps (-t)
+-t Fault.CorruptState <- Guard.TerminalStateRansL_And_ExactStreamConsumption
+-t Fault.TruncatedStream <- Guard.CheckedReaderBounds_And_CanonicalVarint
+-t Fault.ChecksumMismatch <- Guard.HeaderChainedIeeeCrc32
+-t Fault.OutputTooLarge <- Guard.ExplicitMaxDecodeBudget_And_CheckedMul
+-t Fault.CorruptProbabilityTable <- Guard.ExactNormalizedSum_Pow2Scale
+-t Fault.CorruptLzStream <- Guard.OffsetBounds_And_SubstreamBalance
+-t Fault.CorruptSocketStream <- Guard.SocketBounds_ClusterCap32_And_RadixSpanState
+-t Fault.CorruptLz2dStream <- Guard.StrideBounds_And_CausalReplayBalance
+-t Fault.CorruptParallelBlock <- Guard.HeaderCrc32_BlockCrc32_And_ExactLengthSum
+-t Fault.CorruptResidualBlock <- Guard.ZigzagBounds_And_EscapeRangeCheck
+-t Fault.InvalidDimensions <- Guard.EvenYuv420Bounds_And_MaxPixelCeiling
+-t Fault.ReferenceMismatch <- Guard.ReferenceFrameIeeeCrc32_And_RollingIntraWave
+-t Fault.CorruptVideoFrame <- Guard.CausalIbcBounds_And_ExactSubstreamBalance
+
+# Symmetric airlock fixed-points (0t)
+0t encode_8way |> decode_with_limit_into >< raw_bytes
+0t compress_lz_split |> decompress_lz_split_with_limit >< raw_bytes
+0t encode_socket_8way |> decode_socket_8way_with_limit >< raw_bytes
+0t compress_socket_lz2d |> decompress_socket_lz2d_with_limit >< raw_bytes
+0t encode_adaptive_nc_nibble |> decode_adaptive_nc_nibble >< raw_bytes
+0t compress_parallel_blocks |> decompress_parallel_blocks >< raw_bytes
+0t encode_residuals_4x4 |> decode_residuals_4x4_with_limit >< residual_blocks
+0t encode_residuals_8x8 |> decode_residuals_8x8_with_limit >< residual_blocks
+0t encode_video_frame |> decode_video_frame >< yuv420_frame
+0t adaptive_encode |> adaptive_decode >< frame_sequence

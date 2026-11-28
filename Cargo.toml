@@ -1,0 +1,24 @@
+[package]
+name = "zero-rans"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.81"
+license = "Apache-2.0"
+description = "Zero-dependency, zero-spill pure-Rust 8-way interleaved rANS, power-of-two fixed-point socket LZ (BRL2), non-commutative Order-2/stack context coding, SIMD-ready integer kernels, and video residual codec"
+repository = "https://github.com/blindlabs-ai/zero-rans"
+homepage = "https://blindlabs.ai"
+keywords = ["compression", "rans", "socket_rans", "socket_lz2d", "socket_kernels"]
+categories = ["compression", "encoding", "multimedia::video"]
+
+[features]
+zero-cc-native = []
+
+[dependencies]
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(kani)'] }
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
